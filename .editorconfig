@@ -1,0 +1,33 @@
+# EditorConfig — https://editorconfig.org
+# Keeps every editor / IDE on the same indentation, line-ending, and
+# whitespace rules for this project. Mirrors `ruff.toml`'s line-length 100.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# Python
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+# Tests / experiments / package — same rules
+[{tests,src}/**.py]
+indent_size = 4
+max_line_length = 100
+
+# LaTeX
+[*.{tex,bib,sty,cls}]
+indent_size = 2
+
+# Web-ish + data + config
+[*.{md,yml,yaml,json,toml,cff,xml,html}]
+indent_size = 2
+
+# Makefiles need real tabs
+[{Makefile,makefile,*.mk}]
+indent_style = tab

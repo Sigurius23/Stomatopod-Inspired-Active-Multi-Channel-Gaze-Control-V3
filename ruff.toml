@@ -1,0 +1,49 @@
+# Ruff configuration for stomatopod-active-vision.
+#
+# The project deliberately uses an "imports below MUJOCO_GL default" pattern
+# in every test and experiment script (so `MUJOCO_GL=egl` is set before
+# mujoco is imported on headless machines). Ruff would otherwise flag those
+# with E402; we silence the rule for the affected directories only.
+#
+# Run:
+#     ruff check src/ tests/
+#     ruff check --fix src/ tests/    # auto-fix the fixable ones
+
+# Apply to project sources only — never to results/, report/, presentation/.
+include = ["src/**/*.py", "tests/**/*.py"]
+
+# Practical line length for scientific code; matches the project's average.
+line-length = 100
+
+# Target Python 3.10+ (pyproject.toml requires-python).
+target-version = "py310"
+
+[lint]
+# A modest, conservative rule set:
+#   E  — pycodestyle errors
+#   F  — pyflakes (unused imports, undefined names, etc.)
+#   I  — isort (import ordering)
+#   B  — flake8-bugbear (common bug patterns)
+# We deliberately do NOT enable noisy rule families (D for docstrings,
+# ANN for type-annotations, PT for pytest, etc.) because the project
+# follows its own conventions documented in the source files.
+select = ["E", "F", "I", "B"]
+
+# Project-specific exceptions:
+ignore = [
+    "E501",   # line too long: enforced by reviewer, not the linter
+    "B008",   # function-call-in-default-argument: used deliberately for
+              # dataclass-default mutable factories elsewhere
+]
+
+# Auto-fix removes unused imports / empty f-strings / multiple-imports-on-one-line.
+fixable = ["ALL"]
+
+[lint.per-file-ignores]
+# Test and experiment scripts import the package AFTER setting MUJOCO_GL.
+# That's an intentional pattern; let those files keep imports below code.
+"tests/**/*.py"            = ["E402", "F401"]
+"src/experiments/*.py"     = ["E402"]
+
+[lint.isort]
+known-first-party = ["stomatopod_vision"]

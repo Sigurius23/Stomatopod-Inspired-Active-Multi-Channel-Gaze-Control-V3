@@ -1,0 +1,68 @@
+cff-version: 1.2.0
+title: >-
+  Stomatopod-Inspired Active Multi-Channel Gaze Control:
+  A Three-Layer Biomimetic Architecture in MuJoCo
+message: >-
+  If you use this code or the empirical findings (e.g. the scheduler
+  weight-tuning anti-pattern, or the hard-scene benchmark design)
+  please cite the project report.
+type: software
+authors:
+  - given-names: "<YOUR FIRST NAME>"
+    family-names: "<YOUR LAST NAME>"
+    email: "<your.email@example.edu>"
+    affiliation: "Universität Osnabrück (UOS)"
+abstract: >-
+  A three-layer biomimetic architecture in MuJoCo for scanning
+  compound-eye-style sensing, inspired by the active scanning,
+  multi-channel sensing, and early-stage information compression
+  observed in the mantis shrimp visual system. Compares a passive
+  multi-channel camera (B1) against the same hardware with in-sensor
+  preprocessing (B2) and against fully active scanning with in-sensor
+  preprocessing (B3) on two scene families, with a bonus learned
+  scheduler (B3-Learned) and a moving-targets variant.
+keywords:
+  - neuromorphic-control
+  - active-perception
+  - mantis-shrimp
+  - mujoco
+  - biomimetic
+  - polarization-sensing
+  - event-driven
+license: MIT
+repository-code: "https://github.com/NeuromorphicControl/stomatopod-active-vision"
+date-released: "2026-09-01"
+references:
+  - type: article
+    authors:
+      - family-names: Daly
+        given-names: I. M.
+      - family-names: How
+        given-names: M. J.
+      - family-names: Partridge
+        given-names: J. C.
+      - family-names: Roberts
+        given-names: N. W.
+    title: "Complex gaze stabilization in mantis shrimp"
+    journal: "Proceedings of the Royal Society B"
+    volume: 285
+    issue: 1878
+    year: 2018
+    doi: "10.1098/rspb.2018.0594"
+  - type: article
+    authors:
+      - family-names: Thoen
+        given-names: H. H.
+      - family-names: How
+        given-names: M. J.
+      - family-names: Chiou
+        given-names: T.-H.
+      - family-names: Marshall
+        given-names: J.
+    title: "A different form of color vision in mantis shrimp"
+    journal: "Science"
+    volume: 343
+    issue: 6169
+    pages: "411-413"
+    year: 2014
+    doi: "10.1126/science.1245824"

@@ -1,0 +1,561 @@
+<!--
+  Stomatopod-Inspired Active Multi-Channel Gaze Control
+  =====================================================
+  HARD scene variant — designed so that B3 (active scanning) visibly
+  beats B1/B2 (fixed cameras) on the coverage metric.
+
+  Design notes
+  ------------
+  * Head + eye gimbals are byte-identical with the canonical scene
+    (same kinematics, joint limits, damping, gear, sign conventions), so
+    GimbalPD, scheduler limits, and every existing test still apply.
+
+  * TEN interesting+polarized targets are scattered around the head in
+    a hemisphere: pairs at ±60° azimuth × ±30° elevation, a forward
+    up/down pair high in pitch (±45° el), and a back-left/back-right
+    pair near the gimbal yaw limit (±85° az). ALL ten sit outside the
+    rest-pose FoV (±60° azimuth × ±5° elevation), so a fixed-gaze
+    controller (B1/B2) sees ZERO of them.
+
+  * Four UV "decoys" (non-interesting, no polarization) are placed at
+    moderate azimuths: two inside the rest FoV (UVA_dL, UVA_dR) and two
+    just outside (UVB_dL, UVB_dR). The decoys give B1/B2 some
+    bandwidth to chew on and make the scheduler's job harder by
+    burning attention on clutter.
+
+  * The four "decor" targets from the default scene (R, G, B, UVA_1)
+    are kept — they are visually loud, sit at moderate azimuths, and
+    further bait the scheduler. None of them are interesting.
+
+  * Polarization angles for the 10 interesting targets are spread
+    evenly across [0, π) so the decoder cannot cheat by guessing one
+    dominant angle.
+
+  All Python-side metadata (spectral class, polarization angle,
+  is_interesting flag) for these new bodies lives in
+  stomatopod_vision.world.HARD_TARGETS. The RGBA colours below are
+  cosmetic.
+-->
+<mujoco model="stomatopod_eyes_hard">
+
+  <compiler angle="radian" coordinate="local" autolimits="true"/>
+
+  <option timestep="0.002"
+          gravity="0 0 0"
+          integrator="implicitfast"/>
+
+  <visual>
+    <global offwidth="1024" offheight="768"/>
+    <quality shadowsize="4096"/>
+  </visual>
+
+  <default>
+    <geom contype="0" conaffinity="0" group="1"/>
+    <joint armature="0.001" damping="0.10"/>
+    <motor ctrllimited="true" ctrlrange="-1.0 1.0" gear="1"/>
+    <site size="0.015" rgba="0 1 0 1"/>
+  </default>
+
+  <!-- =================================================================
+       Assets (cosmetic only): a grey checker ground texture + a sky
+       gradient. Added for video-friendly rendering. Nothing in the
+       Python pipeline reads these — they are purely visual.
+       ================================================================= -->
+  <asset>
+    <texture name="skybox" type="skybox" builtin="gradient"
+             rgb1="0.55 0.62 0.72" rgb2="0.18 0.20 0.27"
+             width="256" height="256"/>
+    <texture name="groundplane" type="2d" builtin="checker"
+             rgb1="0.32 0.34 0.38" rgb2="0.20 0.22 0.25"
+             width="512" height="512" mark="cross" markrgb="0.45 0.48 0.52"/>
+    <material name="groundplane" texture="groundplane"
+              texuniform="true" texrepeat="6 6" reflectance="0.05"/>
+
+    <!-- =============== Body / eye visual materials (2026-07-02) ============
+         Cosmetic only; nothing in Python reads these. Chosen to imitate
+         the mantis-shrimp compound-eye visual character (Marshall et al.
+         1991; Cronin & Marshall 1989): an off-white bulbous eye with
+         a darker equatorial mid-band dividing DH and VH.
+         ================================================================= -->
+    <material name="carapace" rgba="0.42 0.36 0.30 1"
+              specular="0.15" shininess="0.20" reflectance="0.02"/>
+    <material name="eyeball"  rgba="0.93 0.87 0.72 1"
+              specular="0.35" shininess="0.55" reflectance="0.05"/>
+    <material name="midband"  rgba="0.16 0.10 0.08 1"
+              specular="0.10" shininess="0.20"/>
+    <material name="ventral"  rgba="0.70 0.60 0.48 1"
+              specular="0.25" shininess="0.30"/>
+    <material name="eye_L_id" rgba="0.85 0.20 0.20 1"
+              specular="0.35" shininess="0.55"/>
+    <material name="eye_R_id" rgba="0.20 0.20 0.85 1"
+              specular="0.35" shininess="0.55"/>
+
+    <!-- =========== Dorsal vs ventral hemisphere shades (2026-07-02) =======
+         The two halves of a stomatopod eye are distinct anatomical
+         regions (the dorsal and ventral hemispheres), each an apposition
+         retina looking in a slightly different direction. We tint the
+         dorsal cap lighter/greener and the ventral cap darker so the
+         DH != VH split is legible at a glance.
+         CITE: Marshall 1988; Cronin & Marshall 1989.
+         ================================================================= -->
+    <material name="eye_dorsal"  rgba="0.87 0.83 0.62 1"
+              specular="0.35" shininess="0.55" reflectance="0.05"/>
+    <material name="eye_ventral" rgba="0.64 0.56 0.40 1"
+              specular="0.30" shininess="0.45" reflectance="0.04"/>
+
+    <!-- =============== Six-row midband (2026-07-02) =======================
+         The famous stomatopod midband: a NARROW horizontal strip of six
+         ommatidial rows dividing DH from VH. It is a FIXED anatomical
+         region - it moves with the eye as a unit and does NOT slide or
+         rotate independently inside the eye.
+           - midband_base is the dark stripe the rows sit on, so the
+             inter-row gaps read as thin dark lines.
+           - Rows 1-4 are the SPECTRAL rows (intrarhabdomal colour
+             filters), tinted along a coarse long->short wavelength ramp.
+           - Rows 5-6 are the POLARISATION rows, given a high-specular
+             iridescent look to evoke the quarter-wave-retarder-like
+             structures that grant circular-polarisation vision.
+         CITE: Cronin & Marshall 1989 (spectral rows);
+               Chiou et al. 2008 (rows 5-6 circular polarisation).
+         ================================================================= -->
+    <material name="midband_base" rgba="0.09 0.07 0.06 1"
+              specular="0.10" shininess="0.20"/>
+    <material name="mb_row1" rgba="0.82 0.17 0.15 1" specular="0.25" shininess="0.35"/>
+    <material name="mb_row2" rgba="0.90 0.55 0.16 1" specular="0.25" shininess="0.35"/>
+    <material name="mb_row3" rgba="0.32 0.70 0.26 1" specular="0.25" shininess="0.35"/>
+    <material name="mb_row4" rgba="0.18 0.38 0.82 1" specular="0.25" shininess="0.35"/>
+    <material name="mb_row5" rgba="0.20 0.82 0.78 1" specular="0.70" shininess="0.85" reflectance="0.25"/>
+    <material name="mb_row6" rgba="0.80 0.32 0.84 1" specular="0.70" shininess="0.85" reflectance="0.25"/>
+
+    <!-- Segmented eyestalk that carries the eye. Cosmetic. -->
+    <material name="eyestalk" rgba="0.44 0.37 0.32 1"
+              specular="0.20" shininess="0.30"/>
+  </asset>
+
+    <worldbody>
+
+    <!-- ===================== Cosmetic ground + lighting =====================
+         A grey checker floor (purely visual, no collisions), three
+         lights, and four named cameras for video B-roll. None of this
+         changes the physics or sensor model.
+         ====================================================================== -->
+
+    <geom name="floor" pos="0 0 0" size="3 3 0.05" type="plane"
+          material="groundplane" rgba="1 1 1 1"
+          contype="0" conaffinity="0"/>
+
+    <!-- Three-light setup: key (high front-left, casts shadows), fill
+         (lower right, no shadows), back (rim from behind). -->
+    <light name="key_light"   pos="-0.8  -1.2  2.4" dir="0.3 0.7 -0.8"
+           diffuse="0.55 0.55 0.55" specular="0.25 0.25 0.25"
+           castshadow="true"/>
+    <light name="fill_light"  pos=" 1.4  -0.8  1.8" dir="-0.4 0.5 -0.6"
+           diffuse="0.32 0.32 0.34" specular="0.10 0.10 0.10"
+           castshadow="false"/>
+    <light name="back_light"  pos=" 0.0   1.6  2.2" dir="0 -0.7 -0.8"
+           diffuse="0.18 0.20 0.24" specular="0.05 0.05 0.05"
+           castshadow="false"/>
+
+<!-- ===================== HEAD + EYES (unchanged) ==================== -->
+    <!-- ============================ Cameras ================================
+         Re-aimed 2026-07-01 for better B-roll framing:
+         head is now foreground, targets fill the middle band, floor takes
+         only the bottom third of the frame. All four cameras look at
+         approximately the target-cloud centroid (0, 0.4, 1.05).
+         ===================================================================== -->
+    <!-- overview: high 3/4 view — best "what's going on" angle -->
+    <camera name="overview"
+            pos="0 -1.6 1.7"
+            xyaxes="1 0 0  0 0.275 0.962"
+            fovy="45"/>
+    <!-- cinematic: side-front hero shot, low angle, foregrounds the head -->
+    <camera name="cinematic"
+            pos="0.9 -1.0 1.20"
+            xyaxes="0.789 0.614 0  -0.054 0.069 0.996"
+            fovy="42"/>
+    <!-- close_left / close_right: tight on each eye tower for FoV overlays -->
+    <camera name="close_left"
+            pos="-0.45 -0.55 1.20"
+            xyaxes="0.915 -0.403 0  0.073 0.165 0.984"
+            fovy="35"/>
+    <camera name="close_right"
+            pos="0.45 -0.55 1.20"
+            xyaxes="0.915 0.403 0  -0.073 0.165 0.984"
+            fovy="35"/>
+
+    <body name="head" pos="0 0 1.0">
+
+      <!-- ============================== HEAD =================================
+        Cosmetic carapace: two overlapping ellipsoids give the head a
+        stouter, tapered silhouette (posterior "carapace" bulb + narrower
+        anterior rostrum) instead of the old flat shipping-crate box.
+        Contact disabled — this is visual only, physics is in the gimbals.
+        ================================================================== -->
+      <!-- Cephalothorax / carapace: an elongated ellipsoid sitting BELOW
+           the eyestalk roots (top surface ~z=0 in head-local coords) so
+           the stalked eyes stand clearly proud of the body instead of
+           being half-swallowed by it. Cosmetic; physics is in the gimbals. -->
+      <geom name="head_carapace"
+            type="ellipsoid" size="0.105 0.170 0.050"
+            pos="0 -0.020 -0.058"
+            material="carapace"
+            contype="0" conaffinity="0"/>
+      <!-- Rostral plate: the pointed shield between the two eyestalks. -->
+      <geom name="head_rostrum"
+            type="ellipsoid" size="0.045 0.075 0.028"
+            pos="0 0.055 -0.030"
+            material="carapace"
+            contype="0" conaffinity="0"/>
+      <!-- Sockets where each eyestalk emerges from the carapace. -->
+      <geom name="head_socket_L"
+            type="ellipsoid" size="0.024 0.024 0.014"
+            pos="-0.12 0 -0.010"
+            material="carapace"
+            contype="0" conaffinity="0"/>
+      <geom name="head_socket_R"
+            type="ellipsoid" size="0.024 0.024 0.014"
+            pos="0.12 0 -0.010"
+            material="carapace"
+            contype="0" conaffinity="0"/>
+
+      <!-- =================== LEFT EYE GIMBAL ===================
+        3-DOF gimbal: yaw (z) → pitch (y) → roll (x) around the eye body.
+        The eye body carries a small collection of visual geoms designed
+        to imitate the mantis-shrimp compound eye at a glance:
+          - a cream ellipsoid "eyeball",
+          - a dark equatorial "mid-band" dividing DH and VH,
+          - a slightly darker ventral cap,
+          - a small side-identity dot (red) so viewers can tell L from R.
+        The two sensor sites (_center, _axis) are preserved at their
+        canonical local positions — sensor.py + tests lock these. -->
+      <body name="eye_L_yaw_link" pos="-0.12 0 0">
+        <joint name="eye_L_yaw"   type="hinge" axis="0 0 1"
+               range="-1.57 1.57"/>
+        <!-- Short stalk cylinder (visible even when the eye is at rest) -->
+        <geom  name="eye_L_yaw_geom"
+               type="cylinder" size="0.013 0.020"
+               material="eyestalk"
+               contype="0" conaffinity="0"/>
+
+        <body name="eye_L_pitch_link" pos="0 0 0.020">
+          <joint name="eye_L_pitch" type="hinge" axis="0 1 0"
+                 range="-1.05 1.05"/>
+          <geom  name="eye_L_pitch_geom"
+                 type="cylinder" size="0.011 0.020"
+                 material="eyestalk"
+                 contype="0" conaffinity="0"/>
+
+          <body name="eye_L" pos="0 0 0.020">
+            <joint name="eye_L_roll" type="hinge" axis="1 0 0"
+                   range="-3.14 3.14"/>
+
+            <!-- ============ Stomatopod compound eye (2026-07-02) =========
+                     A biomimetic but anatomically-legible eye: a bulbous
+                     apposition eye split into a DORSAL hemisphere (top)
+                     and VENTRAL hemisphere (bottom) by a NARROW SIX-ROW
+                     MIDBAND at the equator. All of this geometry is rigid
+                     in the eye body — the midband moves with the eye as a
+                     unit and never slides inside it; the roll DOF rotates
+                     the whole assembly, which is what makes the two
+                     polarisation rows physically meaningful (see the roll
+                     handling in sensor.py). The two sensor sites at the
+                     bottom of this body are UNCHANGED. -->
+
+            <!-- Smooth base sphere so the eye is always solid. -->
+            <geom name="eye_L_ball"
+                  type="ellipsoid" size="0.028 0.030 0.028"
+                  pos="0 0.010 0"
+                  material="eyeball"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Dorsal hemisphere cap (lighter/greener): the DH. -->
+            <geom name="eye_L_dorsal"
+                  type="ellipsoid" size="0.0284 0.0304 0.0175"
+                  pos="0 0.010 0.0125"
+                  material="eye_dorsal"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Ventral hemisphere cap (darker): the VH. -->
+            <geom name="eye_L_ventral"
+                  type="ellipsoid" size="0.0284 0.0304 0.0175"
+                  pos="0 0.010 -0.0125"
+                  material="eye_ventral"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Dark base stripe the six rows sit on (fills the gaps so
+                 the inter-row boundaries read as thin dark lines). -->
+            <geom name="eye_L_midband_base"
+                  type="ellipsoid" size="0.0286 0.0306 0.0072"
+                  pos="0 0.010 0"
+                  material="midband_base"
+                  contype="0" conaffinity="0"/>
+
+            <!-- The six midband rows, dorsal (row1) to ventral (row6).
+                 Rows 1-4 are the spectral rows; rows 5-6 the polarisation
+                 (quarter-wave / circular-polarisation) rows. -->
+            <geom name="eye_L_mb_row1" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010  0.00542" material="mb_row1" contype="0" conaffinity="0"/>
+            <geom name="eye_L_mb_row2" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010  0.00325" material="mb_row2" contype="0" conaffinity="0"/>
+            <geom name="eye_L_mb_row3" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010  0.00108" material="mb_row3" contype="0" conaffinity="0"/>
+            <geom name="eye_L_mb_row4" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010 -0.00108" material="mb_row4" contype="0" conaffinity="0"/>
+            <geom name="eye_L_mb_row5" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010 -0.00325" material="mb_row5" contype="0" conaffinity="0"/>
+            <geom name="eye_L_mb_row6" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010 -0.00542" material="mb_row6" contype="0" conaffinity="0"/>
+
+            <!-- Side-identity + roll marker: a small dot at the anterior
+                 dorsal pole. Red = L, Blue = R (matches the FoV overlay
+                 colours in viz.py). Rotates with roll, so it still works
+                 as a natural roll marker. -->
+            <geom name="eye_L_id_spot"
+                  type="sphere" size="0.006"
+                  pos="0 0.038 0.012"
+                  material="eye_L_id"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Two sites read by sensor.py (do not move these):
+                 - eye_L_center: gimbal centre for Jacobians.
+                 - eye_L_axis:   1 cm ahead; defines forward vector. -->
+            <site name="eye_L_center" pos="0 0 0"      rgba="0 1 0 0"/>
+            <site name="eye_L_axis"   pos="0 0.05 0"   rgba="1 1 0 0"/>
+          </body>
+        </body>
+      </body>
+
+      <!-- =================== RIGHT EYE GIMBAL ===================
+        3-DOF gimbal: yaw (z) → pitch (y) → roll (x) around the eye body.
+        The eye body carries a small collection of visual geoms designed
+        to imitate the mantis-shrimp compound eye at a glance:
+          - a cream ellipsoid "eyeball",
+          - a dark equatorial "mid-band" dividing DH and VH,
+          - a slightly darker ventral cap,
+          - a small side-identity dot (blue) so viewers can tell L from R.
+        The two sensor sites (_center, _axis) are preserved at their
+        canonical local positions — sensor.py + tests lock these. -->
+      <body name="eye_R_yaw_link" pos="0.12 0 0">
+        <joint name="eye_R_yaw"   type="hinge" axis="0 0 1"
+               range="-1.57 1.57"/>
+        <!-- Short stalk cylinder (visible even when the eye is at rest) -->
+        <geom  name="eye_R_yaw_geom"
+               type="cylinder" size="0.013 0.020"
+               material="eyestalk"
+               contype="0" conaffinity="0"/>
+
+        <body name="eye_R_pitch_link" pos="0 0 0.020">
+          <joint name="eye_R_pitch" type="hinge" axis="0 1 0"
+                 range="-1.05 1.05"/>
+          <geom  name="eye_R_pitch_geom"
+                 type="cylinder" size="0.011 0.020"
+                 material="eyestalk"
+                 contype="0" conaffinity="0"/>
+
+          <body name="eye_R" pos="0 0 0.020">
+            <joint name="eye_R_roll" type="hinge" axis="1 0 0"
+                   range="-3.14 3.14"/>
+
+            <!-- ============ Stomatopod compound eye (2026-07-02) =========
+                     A biomimetic but anatomically-legible eye: a bulbous
+                     apposition eye split into a DORSAL hemisphere (top)
+                     and VENTRAL hemisphere (bottom) by a NARROW SIX-ROW
+                     MIDBAND at the equator. All of this geometry is rigid
+                     in the eye body — the midband moves with the eye as a
+                     unit and never slides inside it; the roll DOF rotates
+                     the whole assembly, which is what makes the two
+                     polarisation rows physically meaningful (see the roll
+                     handling in sensor.py). The two sensor sites at the
+                     bottom of this body are UNCHANGED. -->
+
+            <!-- Smooth base sphere so the eye is always solid. -->
+            <geom name="eye_R_ball"
+                  type="ellipsoid" size="0.028 0.030 0.028"
+                  pos="0 0.010 0"
+                  material="eyeball"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Dorsal hemisphere cap (lighter/greener): the DH. -->
+            <geom name="eye_R_dorsal"
+                  type="ellipsoid" size="0.0284 0.0304 0.0175"
+                  pos="0 0.010 0.0125"
+                  material="eye_dorsal"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Ventral hemisphere cap (darker): the VH. -->
+            <geom name="eye_R_ventral"
+                  type="ellipsoid" size="0.0284 0.0304 0.0175"
+                  pos="0 0.010 -0.0125"
+                  material="eye_ventral"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Dark base stripe the six rows sit on (fills the gaps so
+                 the inter-row boundaries read as thin dark lines). -->
+            <geom name="eye_R_midband_base"
+                  type="ellipsoid" size="0.0286 0.0306 0.0072"
+                  pos="0 0.010 0"
+                  material="midband_base"
+                  contype="0" conaffinity="0"/>
+
+            <!-- The six midband rows, dorsal (row1) to ventral (row6).
+                 Rows 1-4 are the spectral rows; rows 5-6 the polarisation
+                 (quarter-wave / circular-polarisation) rows. -->
+            <geom name="eye_R_mb_row1" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010  0.00542" material="mb_row1" contype="0" conaffinity="0"/>
+            <geom name="eye_R_mb_row2" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010  0.00325" material="mb_row2" contype="0" conaffinity="0"/>
+            <geom name="eye_R_mb_row3" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010  0.00108" material="mb_row3" contype="0" conaffinity="0"/>
+            <geom name="eye_R_mb_row4" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010 -0.00108" material="mb_row4" contype="0" conaffinity="0"/>
+            <geom name="eye_R_mb_row5" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010 -0.00325" material="mb_row5" contype="0" conaffinity="0"/>
+            <geom name="eye_R_mb_row6" type="ellipsoid" size="0.0292 0.0312 0.00085"
+                  pos="0 0.010 -0.00542" material="mb_row6" contype="0" conaffinity="0"/>
+
+            <!-- Side-identity + roll marker: a small dot at the anterior
+                 dorsal pole. Red = L, Blue = R (matches the FoV overlay
+                 colours in viz.py). Rotates with roll, so it still works
+                 as a natural roll marker. -->
+            <geom name="eye_R_id_spot"
+                  type="sphere" size="0.006"
+                  pos="0 0.038 0.012"
+                  material="eye_R_id"
+                  contype="0" conaffinity="0"/>
+
+            <!-- Two sites read by sensor.py (do not move these):
+                 - eye_R_center: gimbal centre for Jacobians.
+                 - eye_R_axis:   1 cm ahead; defines forward vector. -->
+            <site name="eye_R_center" pos="0 0 0"      rgba="0 1 0 0"/>
+            <site name="eye_R_axis"   pos="0 0.05 0"   rgba="1 1 0 0"/>
+          </body>
+        </body>
+      </body>
+
+    </body>
+
+    <!-- =============================== Targets ==============================
+         Regenerated 2026-07-02 after the head/eye visual redesign.
+         Each target is a coloured sphere with contact disabled — physics
+         is inert; sensor.py reads only body-frame world positions.
+         ================================================================= -->
+    <body name="target_R_1" pos="-0.4 0.8 1.15">
+      <geom name="target_R_1_geom" type="sphere" size="0.035"
+            rgba="0.85 0.15 0.15 1" contype="0" conaffinity="0"/>
+      <site name="target_R_1_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_G_1" pos="0.3 0.95 1.2">
+      <geom name="target_G_1_geom" type="sphere" size="0.035"
+            rgba="0.15 0.75 0.20 1" contype="0" conaffinity="0"/>
+      <site name="target_G_1_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_B_1" pos="0.5 0.6 0.85">
+      <geom name="target_B_1_geom" type="sphere" size="0.035"
+            rgba="0.15 0.20 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_B_1_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVA_1" pos="-0.5 0.75 0.85">
+      <geom name="target_UVA_1_geom" type="sphere" size="0.035"
+            rgba="0.55 0.30 0.75 1" contype="0" conaffinity="0"/>
+      <site name="target_UVA_1_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVA_dL" pos="-0.35 0.9 1.05">
+      <geom name="target_UVA_dL_geom" type="sphere" size="0.035"
+            rgba="0.55 0.30 0.75 1" contype="0" conaffinity="0"/>
+      <site name="target_UVA_dL_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVA_dR" pos="0.35 0.9 1.05">
+      <geom name="target_UVA_dR_geom" type="sphere" size="0.035"
+            rgba="0.55 0.30 0.75 1" contype="0" conaffinity="0"/>
+      <site name="target_UVA_dR_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVB_dL" pos="-0.2 1.05 1.06">
+      <geom name="target_UVB_dL_geom" type="sphere" size="0.035"
+            rgba="0.85 0.30 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVB_dL_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVB_dR" pos="0.2 1.05 1.06">
+      <geom name="target_UVB_dR_geom" type="sphere" size="0.035"
+            rgba="0.85 0.30 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVB_dR_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_FU" pos="0.0 0.75 1.6">
+      <geom name="target_UVpol_FU_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_FU_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_FD" pos="0.0 0.75 0.55">
+      <geom name="target_UVpol_FD_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_FD_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_LU" pos="-0.55 0.55 1.55">
+      <geom name="target_UVpol_LU_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_LU_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_RU" pos="0.55 0.55 1.55">
+      <geom name="target_UVpol_RU_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_RU_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_LD" pos="-0.55 0.55 0.5">
+      <geom name="target_UVpol_LD_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_LD_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_RD" pos="0.55 0.55 0.5">
+      <geom name="target_UVpol_RD_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_RD_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_FL" pos="-1.0 0.3 1.05">
+      <geom name="target_UVpol_FL_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_FL_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_FR" pos="1.0 0.3 1.05">
+      <geom name="target_UVpol_FR_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_FR_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_BL" pos="-1.1 0.1 1.05">
+      <geom name="target_UVpol_BL_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_BL_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+    <body name="target_UVpol_BR" pos="1.1 0.1 1.05">
+      <geom name="target_UVpol_BR_geom" type="sphere" size="0.045"
+            rgba="0.25 0.85 0.85 1" contype="0" conaffinity="0"/>
+      <site name="target_UVpol_BR_site" pos="0 0 0" rgba="1 1 1 0"/>
+    </body>
+
+  </worldbody>
+
+  <actuator>
+    <motor name="m_eye_L_yaw"   joint="eye_L_yaw"   ctrlrange="-1 1"/>
+    <motor name="m_eye_L_pitch" joint="eye_L_pitch" ctrlrange="-1 1"/>
+    <motor name="m_eye_L_roll"  joint="eye_L_roll"  ctrlrange="-1 1"/>
+
+    <motor name="m_eye_R_yaw"   joint="eye_R_yaw"   ctrlrange="-1 1"/>
+    <motor name="m_eye_R_pitch" joint="eye_R_pitch" ctrlrange="-1 1"/>
+    <motor name="m_eye_R_roll"  joint="eye_R_roll"  ctrlrange="-1 1"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="sp_eye_L_yaw"   joint="eye_L_yaw"/>
+    <jointpos name="sp_eye_L_pitch" joint="eye_L_pitch"/>
+    <jointpos name="sp_eye_L_roll"  joint="eye_L_roll"/>
+    <jointpos name="sp_eye_R_yaw"   joint="eye_R_yaw"/>
+    <jointpos name="sp_eye_R_pitch" joint="eye_R_pitch"/>
+    <jointpos name="sp_eye_R_roll"  joint="eye_R_roll"/>
+
+    <jointvel name="sv_eye_L_yaw"   joint="eye_L_yaw"/>
+    <jointvel name="sv_eye_L_pitch" joint="eye_L_pitch"/>
+    <jointvel name="sv_eye_L_roll"  joint="eye_L_roll"/>
+    <jointvel name="sv_eye_R_yaw"   joint="eye_R_yaw"/>
+    <jointvel name="sv_eye_R_pitch" joint="eye_R_pitch"/>
+    <jointvel name="sv_eye_R_roll"  joint="eye_R_roll"/>
+  </sensor>
+
+</mujoco>

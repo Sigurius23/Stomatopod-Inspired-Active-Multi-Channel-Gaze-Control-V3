@@ -1,0 +1,17 @@
+# Core
+mujoco>=3.0
+numpy>=1.24
+
+# Plotting + media
+matplotlib>=3.7
+mediapy>=1.2
+# Video encoding for record_run / make broll. imageio-ffmpeg ships a
+# self-contained static ffmpeg, so no system ffmpeg is required.
+imageio>=2.30
+imageio-ffmpeg>=0.4
+
+# Optional: for the learned scheduler bonus
+# torch>=2.0
+
+# Optional: tests
+# pytest>=7.0

@@ -1,0 +1,72 @@
+# CI for stomatopod-active-vision.
+#
+# Runs lint + the full test suite on every push and PR to the
+# default branch. MuJoCo's EGL rendering needs the system OpenGL +
+# EGL libraries, which we install via apt before the pip step.
+#
+# The workflow deliberately stays minimal: one job, one Python version,
+# one OS. Matrix-expanding it (3.10/3.11/3.12 × ubuntu/macos) is on the
+# TODO list but isn't worth the CI minutes for a one-author project.
+
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:    # allow manual runs from the Actions tab
+
+# Cancel previous runs on the same ref if a new commit comes in.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + tests (Python 3.11, Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # MuJoCo's headless renderer. The libegl1 / libgl1 / libosmesa6 apt
+      # packages below provide the actual GL implementations.
+      MUJOCO_GL: egl
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: Install system OpenGL / EGL libraries + ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+              libegl1 libgl1 libosmesa6 libglu1-mesa libglfw3 ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .[dev]    # ruff for lint
+          pip list
+
+      - name: Lint (ruff)
+        run: make lint
+
+      - name: Type-check (mypy)
+        run: make typecheck
+
+      - name: Run test suite
+        run: |
+          # tests/run_all.py exits non-zero on any failure.
+          MUJOCO_GL=egl python tests/run_all.py
